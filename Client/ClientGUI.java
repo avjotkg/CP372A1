@@ -1,17 +1,17 @@
 
 // client protocol notes based on updated rfc
 // outgoing requests (these must be one line each):
-// POST <x> <y> <color> <message>
-// GET [color=<color>] [contains=<x> <y>] [refersTo=<substring>]  // any subset, if none just simply GET
-// PIN <x> <y>
-// UNPIN <x> <y>
-// SHAKE
-// CLEAR
-// DISCONNECT
-//
+    // POST <x> <y> <color> <message>
+    // GET [color=<color>] [contains=<x> <y>] [refersTo=<substring>]  // any subset, if none just simply GET
+    // PIN <x> <y>
+    // UNPIN <x> <y>
+    // SHAKE
+    // CLEAR
+    // DISCONNECT
+
 // incoming replies:
-// print every received line exactly as received (no parsing)
-// multi-line replies (like get) end with END (print it too)
+    // print every received line exactly as received (no parsing)
+    // multi-line replies (like get) end with END (print it too)
 
 import java.awt.*;
 import javax.swing.*;
@@ -117,6 +117,42 @@ public class ClientGUI extends JFrame
         disconnectbutton.addActionListener(e ->
         {
             dodisconnect();
+        });
+
+        // command button wiring
+        postbutton.addActionListener(e ->
+        {
+            dopost();
+        });
+
+        getbutton.addActionListener(e ->
+        {
+            doget();
+        });
+
+        getpinsbutton.addActionListener(e ->
+        {
+            dogetpins();
+        });
+
+        pinbutton.addActionListener(e ->
+        {
+            dopin(true);
+        });
+
+        unpinbutton.addActionListener(e ->
+        {
+            dopin(false);
+        });
+
+        shakebutton.addActionListener(e ->
+        {
+            doshake();
+        });
+
+        clearbutton.addActionListener(e ->
+        {
+            doclear();
         });
     }
 
@@ -577,6 +613,265 @@ public class ClientGUI extends JFrame
         clientconnection.disconnect();
     }
 
+    // post
+
+    private void dopost()
+    {
+        if (!ensureconnected())
+        {
+            return;
+        }
+
+        Integer x = parserequirednonnegativeint(postxfield, "post x");
+        if (x == null)
+        {
+            return;
+        }
+
+        Integer y = parserequirednonnegativeint(postyfield, "post y");
+        if (y == null)
+        {
+            return;
+        }
+
+        String color = parsecolorselection(postcolorbox);
+        if (color == null)
+        {
+            return;
+        }
+
+        String message = parserequiredsinglelinetext(postmessagefield, "message");
+        if (message == null)
+        {
+            return;
+        }
+
+        if (!validatepostfits(x, y))
+        {
+            return;
+        }
+
+        String command = "POST " + x + " " + y + " " + color + " " + message;
+
+        appendoutputline("> " + command);
+
+        try
+        {
+            clientconnection.sendline(command);
+        }
+        catch (Exception ex)
+        {
+            JOptionPane.showMessageDialog(this, "send failed: " + ex.getMessage());
+        }
+    }
+
+    // get and get pins
+
+    private void doget()
+    {
+        if (!ensureconnected())
+        {
+            return;
+        }
+
+        if (!validatecontainspair())
+        {
+            return;
+        }
+
+        // build: GET [color=...] [contains=x y] [refersTo=...]
+        StringBuilder commandbuilder = new StringBuilder("GET");
+
+        // color is optional, skip if any or placeholder
+        Object selected = getcolorbox.getSelectedItem();
+        if (selected != null)
+        {
+            String color = selected.toString().trim();
+
+            if (!color.equals("(any)") && !color.startsWith("(") && color.length() > 0)
+            {
+                commandbuilder.append(" color=").append(color);
+            }
+        }
+
+        // contains is optional
+        String cxtext = containsxfield.getText().trim();
+        String cytext = containsyfield.getText().trim();
+
+        if (cxtext.length() > 0 && cytext.length() > 0)
+        {
+            Integer cx = parseoptionalnonnegativeint(containsxfield, "contains x");
+            if (cx == null)
+            {
+                return;
+            }
+
+            Integer cy = parseoptionalnonnegativeint(containsyfield, "contains y");
+            if (cy == null)
+            {
+                return;
+            }
+
+            commandbuilder.append(" contains=").append(cx).append(" ").append(cy);
+        }
+
+        // refersto is optional
+        String refersto = parseoptionalsinglelinetext(referstofield, "refersto");
+        if (refersto == null)
+        {
+            return;
+        }
+
+        if (refersto.length() > 0)
+        {
+            commandbuilder.append(" refersTo=").append(refersto);
+        }
+
+        String command = commandbuilder.toString();
+
+        appendoutputline("> " + command);
+
+        try
+        {
+            clientconnection.sendline(command);
+        }
+        catch (Exception ex)
+        {
+            JOptionPane.showMessageDialog(this, "send failed: " + ex.getMessage());
+        }
+    }
+
+    private void dogetpins()
+    {
+        if (!ensureconnected())
+        {
+            return;
+        }
+
+        String command = "GET PINS";
+
+        appendoutputline("> " + command);
+
+        try
+        {
+            clientconnection.sendline(command);
+        }
+        catch (Exception ex)
+        {
+            JOptionPane.showMessageDialog(this, "send failed: " + ex.getMessage());
+        }
+    }
+
+    // pin and unpin
+
+    private void dopin(boolean ispin)
+    {
+        if (!ensureconnected())
+        {
+            return;
+        }
+
+        Integer x = parserequirednonnegativeint(pinxfield, "x");
+        if (x == null)
+        {
+            return;
+        }
+
+        Integer y = parserequirednonnegativeint(pinyfield, "y");
+        if (y == null)
+        {
+            return;
+        }
+
+        // optional bounds check if we know the board size
+        if (boardwidth > -1 && boardheight > -1)
+        {
+            if (x >= boardwidth || y >= boardheight)
+            {
+                JOptionPane.showMessageDialog(this, "point is outside the board");
+                return;
+            }
+        }
+
+        String command;
+
+        if (ispin)
+        {
+            command = "PIN " + x + " " + y;
+        }
+        else
+        {
+            command = "UNPIN " + x + " " + y;
+        }
+
+        appendoutputline("> " + command);
+
+        try
+        {
+            clientconnection.sendline(command);
+        }
+        catch (Exception ex)
+        {
+            JOptionPane.showMessageDialog(this, "send failed: " + ex.getMessage());
+        }
+    }
+
+    // shake and clear
+
+    private void doshake()
+    {
+        if (!ensureconnected())
+        {
+            return;
+        }
+
+        String command = "SHAKE";
+
+        appendoutputline("> " + command);
+
+        try
+        {
+            clientconnection.sendline(command);
+        }
+        catch (Exception ex)
+        {
+            JOptionPane.showMessageDialog(this, "send failed: " + ex.getMessage());
+        }
+    }
+
+    private void doclear()
+    {
+        if (!ensureconnected())
+        {
+            return;
+        }
+
+        int choice = JOptionPane.showConfirmDialog(
+                this,
+                "are you sure you want to clear the board?",
+                "confirm clear",
+                JOptionPane.YES_NO_OPTION
+        );
+
+        if (choice != JOptionPane.YES_OPTION)
+        {
+            return;
+        }
+
+        String command = "CLEAR";
+
+        appendoutputline("> " + command);
+
+        try
+        {
+            clientconnection.sendline(command);
+        }
+        catch (Exception ex)
+        {
+            JOptionPane.showMessageDialog(this, "send failed: " + ex.getMessage());
+        }
+    }
+
     private void handlelinefromserver(String line)
     {
         // print exactly as received
@@ -693,6 +988,226 @@ public class ClientGUI extends JFrame
     {
         outputarea.append(line + "\n");
         outputarea.setCaretPosition(outputarea.getDocument().getLength());
+    }
+
+    // validation helpers
+
+    private boolean ensureconnected()
+    {
+        if (clientconnection == null || !clientconnection.isconnected())
+        {
+            JOptionPane.showMessageDialog(this, "not connected");
+            return false;
+        }
+
+        return true;
+    }
+
+    private Integer parseoptionalnonnegativeint(JTextField field, String fieldname)
+    {
+        String text = field.getText().trim();
+
+        // optional means blank is ok
+        if (text.length() == 0)
+        {
+            return null;
+        }
+
+        int value;
+        try
+        {
+            value = Integer.parseInt(text);
+        }
+        catch (Exception ex)
+        {
+            JOptionPane.showMessageDialog(this, fieldname + " must be a number");
+            field.requestFocusInWindow();
+            return null;
+        }
+
+        if (value < 0)
+        {
+            JOptionPane.showMessageDialog(this, fieldname + " must be 0 or more");
+            field.requestFocusInWindow();
+            return null;
+        }
+
+        return value;
+    }
+
+    private Integer parserequirednonnegativeint(JTextField field, String fieldname)
+    {
+        String text = field.getText().trim();
+
+        if (text.length() == 0)
+        {
+            JOptionPane.showMessageDialog(this, fieldname + " is required");
+            field.requestFocusInWindow();
+            return null;
+        }
+
+        int value;
+        try
+        {
+            value = Integer.parseInt(text);
+        }
+        catch (Exception ex)
+        {
+            JOptionPane.showMessageDialog(this, fieldname + " must be a number");
+            field.requestFocusInWindow();
+            return null;
+        }
+
+        if (value < 0)
+        {
+            JOptionPane.showMessageDialog(this, fieldname + " must be 0 or more");
+            field.requestFocusInWindow();
+            return null;
+        }
+
+        return value;
+    }
+
+    private String parserequiredsinglelinetext(JTextField field, String fieldname)
+    {
+        String text = field.getText();
+
+        if (text == null)
+        {
+            text = "";
+        }
+
+        text = text.trim();
+
+        if (text.length() == 0)
+        {
+            JOptionPane.showMessageDialog(this, fieldname + " is required");
+            field.requestFocusInWindow();
+            return null;
+        }
+
+        // no newlines allowed in protocol line
+        if (text.contains("\n") || text.contains("\r"))
+        {
+            JOptionPane.showMessageDialog(this, fieldname + " must be one line");
+            field.requestFocusInWindow();
+            return null;
+        }
+
+        return text;
+    }
+
+    private String parseoptionalsinglelinetext(JTextField field, String fieldname)
+    {
+        String text = field.getText();
+
+        if (text == null)
+        {
+            text = "";
+        }
+
+        text = text.trim();
+
+        if (text.length() == 0)
+        {
+            return "";
+        }
+
+        if (text.contains("\n") || text.contains("\r"))
+        {
+            JOptionPane.showMessageDialog(this, fieldname + " must be one line");
+            field.requestFocusInWindow();
+            return null;
+        }
+
+        return text;
+    }
+
+    private String parsecolorselection(JComboBox<String> box)
+    {
+        Object selected = box.getSelectedItem();
+
+        if (selected == null)
+        {
+            JOptionPane.showMessageDialog(this, "color is required");
+            return null;
+        }
+
+        String color = selected.toString().trim();
+
+        // block placeholder items like (no colors yet)
+        if (color.startsWith("("))
+        {
+            JOptionPane.showMessageDialog(this, "choose a real color");
+            return null;
+        }
+
+        return color;
+    }
+
+    private boolean validatepostfits(int x, int y)
+    {
+        // if we dont know dims yet, skip this check
+        if (boardwidth < 0 || boardheight < 0 || notewidth < 0 || noteheight < 0)
+        {
+            return true;
+        }
+
+        // note must fit entirely on board
+        if (x + notewidth > boardwidth || y + noteheight > boardheight)
+        {
+            JOptionPane.showMessageDialog(this,
+                    "post does not fit on board\n" +
+                    "board: " + boardwidth + "x" + boardheight + "\n" +
+                    "note: " + notewidth + "x" + noteheight);
+            return false;
+        }
+
+        return true;
+    }
+
+    private boolean validatecontainspair()
+    {
+        String xtext = containsxfield.getText().trim();
+        String ytext = containsyfield.getText().trim();
+
+        // both blank means user is not using contains filter
+        if (xtext.length() == 0 && ytext.length() == 0)
+        {
+            return true;
+        }
+
+        // one filled and the other blank is not allowed
+        if (xtext.length() == 0 || ytext.length() == 0)
+        {
+            JOptionPane.showMessageDialog(this, "contains requires both x and y");
+            return false;
+        }
+
+        // now both are present, they must parse and be non-negative
+        Integer cx = parseoptionalnonnegativeint(containsxfield, "contains x");
+        if (cx == null)
+        {
+            return false;
+        }
+
+        Integer cy = parseoptionalnonnegativeint(containsyfield, "contains y");
+        if (cy == null)
+        {
+            return false;
+        }
+
+        // optional: bounds check if we know board size (contains point must be on board)
+        if (boardwidth > -1 && boardheight > -1)
+        {
+            if (cx >= boardwidth || cy >= boardheight)
+            {
+                JOptionPane.showMessageDialog(this, "contains point is outside the board");
+                return false;
+            }
+        }
+
+        return true;
     }
 
     // this sets buttons enabled/disabled based on connection
