@@ -14,6 +14,8 @@
     // multi-line replies (like get) end with END (print it too)
 
 import java.awt.*;
+import java.awt.event.WindowAdapter;
+import java.awt.event.WindowEvent;
 import javax.swing.*;
 import javax.swing.border.TitledBorder;
 
@@ -92,9 +94,6 @@ public class ClientGUI extends JFrame
         JPanel outputpanel = buildoutputpanel();
         mainpanel.add(outputpanel, BorderLayout.SOUTH);
 
-        // initial state: not connected
-        setconnectedstate(false);
-
         // handshake defaults
         helloreceived = false;
         boardwidth = -1;
@@ -102,6 +101,10 @@ public class ClientGUI extends JFrame
         notewidth = -1;
         noteheight = -1;
         validcolors = null;
+
+        // initial state: not connected
+        resetcolorboxes();
+        setconnectedstate(false);
 
         // local wiring
         clearoutputbutton.addActionListener(e ->
@@ -153,6 +156,36 @@ public class ClientGUI extends JFrame
         clearbutton.addActionListener(e ->
         {
             doclear();
+        });
+
+        // try to disconnect cleanly if user closes the window
+        addWindowListener(new WindowAdapter()
+        {
+            @Override
+            public void windowClosing(WindowEvent e)
+            {
+                try
+                {
+                    if (clientconnection != null && clientconnection.isconnected())
+                    {
+                        try
+                        {
+                            appendoutputline("> DISCONNECT");
+                            clientconnection.sendline("DISCONNECT");
+                        }
+                        catch (Exception ex)
+                        {
+                            // ignore
+                        }
+
+                        clientconnection.disconnect();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    // ignore
+                }
+            }
         });
     }
 
@@ -537,6 +570,7 @@ public class ClientGUI extends JFrame
         notewidth = -1;
         noteheight = -1;
         validcolors = null;
+        resetcolorboxes();
 
         // disable connect right away so user cant spam it
         connectbutton.setEnabled(false);
@@ -884,6 +918,9 @@ public class ClientGUI extends JFrame
             {
                 helloreceived = true;
                 statuslabel.setText("status: connected");
+
+                // re-apply enabled state (post becomes available now)
+                setconnectedstate(true);
             }
         }
     }
@@ -893,7 +930,6 @@ public class ClientGUI extends JFrame
         appendoutputline("(client) disconnected: " + reason);
 
         clientconnection = null;
-        setconnectedstate(false);
 
         // reset handshake info
         helloreceived = false;
@@ -902,6 +938,9 @@ public class ClientGUI extends JFrame
         notewidth = -1;
         noteheight = -1;
         validcolors = null;
+        resetcolorboxes();
+
+        setconnectedstate(false);
     }
 
     private boolean tryparsehello(String line)
@@ -957,6 +996,23 @@ public class ClientGUI extends JFrame
         {
             // if hello is malformed, dont crash client
             return false;
+        }
+    }
+
+    private void resetcolorboxes()
+    {
+        // reset dropdowns back to default placeholders
+        if (postcolorbox != null)
+        {
+            postcolorbox.removeAllItems();
+            postcolorbox.addItem("(no colors yet)");
+        }
+
+        if (getcolorbox != null)
+        {
+            getcolorbox.removeAllItems();
+            getcolorbox.addItem("(any)");
+            getcolorbox.addItem("(no colors yet)");
         }
     }
 
@@ -1197,7 +1253,7 @@ public class ClientGUI extends JFrame
             return false;
         }
 
-        // optional: bounds check if we know board size (contains point must be on board)
+        // bounds check known board size (contains point must be on board)
         if (boardwidth > -1 && boardheight > -1)
         {
             if (cx >= boardwidth || cy >= boardheight)
@@ -1213,11 +1269,18 @@ public class ClientGUI extends JFrame
     // this sets buttons enabled/disabled based on connection
     private void setconnectedstate(boolean isconnected)
     {
+        boolean canpost = isconnected && helloreceived && validcolors != null && validcolors.length > 0;
+
         disconnectbutton.setEnabled(isconnected);
 
-        postbutton.setEnabled(isconnected);
+        // post should wait for hello + real colors
+        postbutton.setEnabled(canpost);
+        postcolorbox.setEnabled(canpost);
+
+        // get can still be used even before hello (no color filter still works)
         getbutton.setEnabled(isconnected);
         getpinsbutton.setEnabled(isconnected);
+
         pinbutton.setEnabled(isconnected);
         unpinbutton.setEnabled(isconnected);
         shakebutton.setEnabled(isconnected);
@@ -1233,7 +1296,14 @@ public class ClientGUI extends JFrame
         }
         else
         {
-            statuslabel.setText("status: connected");
+            if (!helloreceived)
+            {
+                statuslabel.setText("status: connected (waiting for hello)");
+            }
+            else
+            {
+                statuslabel.setText("status: connected");
+            }
         }
     }
 }
