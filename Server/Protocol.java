@@ -25,7 +25,7 @@ public class Protocol {
         INVALID_COORDINATES("03", "INVALID_COORDINATES", "Coordinates must be non-negative integers in the expected format."), 
         UNSUPPORTED_COLOR("04", "UNSUPPORTED_COLOR", "This color is not supported by the server."), 
         COMPLETE_OVERLAP("05", "COMPLETE_OVERLAP", "A note already exists at this exact position (complete overlap is not allowed)."), 
-        NO_NOTE_AT_COORDINATE("06", "NO_NOTE_AT_COORDINATE", "No note exists at the given coordinate."), 
+        NO_NOTE_AT_COORDINATE("06", "NO_NOTE_AT_COORDINATE", "No note exists at the given coordinate or there is existing conflict"), 
         PIN_NOT_FOUND("07", "PIN_NOT_FOUND", "No pin exists at the given coordinate."); 
         final String nn, code, msg; 
         Err(String nn, String code, String msg) { this.nn = nn; this.code = code; this.msg = msg; }
@@ -35,7 +35,7 @@ public class Protocol {
     public static String handshake (Config cfg){
         //Returns delimited and formatted cfg data class for handshaking.
         String colorPart = String.join(" ", cfg.colors());
-        return String.format("HELLO NBB/1.0 %d %d %d %d %s\n",cfg.board_width, cfg.board_height, cfg.note_width, cfg.note_height, colorPart);
+        return String.format("HELLO %d %d %d %d %s\n",cfg.board_width, cfg.board_height, cfg.note_width, cfg.note_height, colorPart);
 
     }
 
@@ -48,7 +48,7 @@ public class Protocol {
     
     public static Response handleLine(String rawLine, Board board, Config cfg){
         //Delimit and clean command to determine where to route
-        String line = rawLine.trim();
+        String line = rawLine.trim().toLowerCase();;
         if (line.isEmpty()) return error (Err.INVALID_FORMAT, "<COMMAND>");
 
         String[] parts = line.split("\\s+");
@@ -57,13 +57,13 @@ public class Protocol {
         //Take header and use switch statement to route to approperite function
         return switch (cmd) {
 
-            case "POST" -> handlePost(rawLine, parts, board, cfg);
-            case "GET" -> handleGet(parts, board, cfg);
-            case "PIN" -> handlePin(parts, board, cfg);
-            case "UNPIN" -> handleUnpin(parts, board, cfg);
-            case "SHAKE" -> handleShake(parts, board);
-            case "CLEAR" -> handleClear(parts, board);
-            case "DISCONNECT" -> handleDisconnect(parts);
+            case "post" -> handlePost(rawLine, parts, board, cfg);
+            case "get" -> handleGet(parts, board, cfg);
+            case "pin" -> handlePin(parts, board, cfg);
+            case "unpin" -> handleUnpin(parts, board, cfg);
+            case "shake" -> handleShake(parts, board);
+            case "clear" -> handleClear(parts, board);
+            case "disconnect" -> handleDisconnect(parts);
             default -> error (Err.INVALID_FORMAT, "<COMMAND>");
         };
     }
@@ -96,8 +96,6 @@ public class Protocol {
     }
 
     private static Response handleGet(String[] parts, Board board, Config cfg){
-        if (parts.length > 2) return error (Err.INVALID_FORMAT, "GET");
-
 
         //Determine what type of get is being called, parse and route to correct funtion in board.
         if (parts.length == 1){
@@ -107,7 +105,7 @@ public class Protocol {
 
         String arg = parts[1];
 
-        if (arg.equals("PINS") && parts.length == 2){
+        if (arg.equals("pins") && parts.length == 2){
             return Response.ok(board.getAllPins());
         }
 

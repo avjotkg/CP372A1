@@ -18,7 +18,7 @@ public class NbbServer {
 
     public void start() throws IOException {
         try (ServerSocket serverSocket = new ServerSocket(port)){
-            System.out.println("NBB server listening on port " + port); //Confirms working
+            System.out.println("server listening on port " + port); //Confirms working
             while (true) {
                 //Generates new client and thread then starts program
                 Socket client = serverSocket.accept();

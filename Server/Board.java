@@ -72,7 +72,7 @@ public class Board {
             Pin p = new Pin(x,y);
             //Checks each note to determine overlap, and updates variables if true.
             for (Note n: notes){
-                if (isPinInNote(n, x, y)){
+                if (!n.pins().contains(p) && isPinInNote(n, x, y)){
                     n.pins().add(p);
                     pinnedAny = true;
                 }
@@ -86,17 +86,19 @@ public class Board {
     public Result unpin(int x, int y){
         rw.writeLock().lock(); //Aquires lock
         try {
-            Pin p = new Pin(x,y);
-            Note best = null;
+            boolean anything = false;
             //Checks through all notes and jeeps track of found
             for (Note n: notes){
-                if (isPinInNote(n, x, y)){
-                    if (best == null || n.seq() > best.seq()) best = n;
+                for (Pin p: n.pins()){
+                    if (p.x() == x && p.y() == y) {
+                        n.pins().remove(p);
+                        anything = true;
+                        break;
+                    }
                 }
             }
             //If found anything remove most recent
-            if (best == null) return Result.PIN_NOT_FOUND;
-            best.pins().remove(p);
+            if (!anything) return Result.PIN_NOT_FOUND;
             return Result.OK;
         } finally {
             rw.writeLock().unlock(); //Releases lock
